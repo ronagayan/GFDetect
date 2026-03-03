@@ -2,8 +2,9 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-export default defineConfig({
-  base: '/GFDetect/',
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? '/GFDetect/' : '/',
+  server: { host: '127.0.0.1' },
   plugins: [
     react(),
     VitePWA({
@@ -21,4 +22,4 @@ export default defineConfig({
       }
     })
   ]
-})
+}))
