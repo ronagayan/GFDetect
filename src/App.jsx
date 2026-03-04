@@ -4,6 +4,7 @@ import Navbar from './components/Navbar'
 import ScanPage from './pages/ScanPage'
 import SocialPage from './pages/SocialPage'
 import HistoryPage from './pages/HistoryPage'
+import MessagesPage from './pages/MessagesPage'
 import AuthModal from './components/AuthModal'
 
 export const AppContext = createContext(null)
@@ -36,11 +37,13 @@ function SplashScreen() {
 }
 
 export default function App() {
-  const [tab, setTab] = useState('scan')
-  const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [showAuth, setShowAuth] = useState(false)
+  const [tab, setTab]             = useState('scan')
+  const [user, setUser]           = useState(null)
+  const [loading, setLoading]     = useState(true)
+  const [showAuth, setShowAuth]   = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
 
+  // Auth state
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
@@ -55,15 +58,57 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
+  // Real-time unread message count
+  useEffect(() => {
+    if (!user) { setUnreadCount(0); return }
+
+    // Initial fetch
+    supabase
+      .from('notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .eq('is_read', false)
+      .eq('type', 'message')
+      .then(({ count }) => setUnreadCount(count ?? 0))
+
+    // Subscribe to notification changes
+    const channel = supabase
+      .channel(`notifs-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
+        () => {
+          supabase
+            .from('notifications')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', user.id)
+            .eq('is_read', false)
+            .eq('type', 'message')
+            .then(({ count }) => setUnreadCount(count ?? 0))
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [user?.id])
+
   if (loading) return <SplashScreen />
 
   return (
-    <AppContext.Provider value={{ user, showAuthModal: () => setShowAuth(true), tab, setTab }}>
+    <AppContext.Provider value={{
+      user,
+      showAuthModal: () => setShowAuth(true),
+      tab,
+      setTab,
+      unreadCount,
+      setUnreadCount,
+    }}>
       <div className="app-root">
-        {tab === 'scan'    && <ScanPage    key="scan"    />}
-        {tab === 'social'  && <SocialPage  key="social"  />}
-        {tab === 'history' && <HistoryPage key="history" />}
-        <Navbar activeTab={tab} onTabChange={setTab} />
+        {tab === 'scan'     && <ScanPage     key="scan"     />}
+        {tab === 'social'   && <SocialPage   key="social"   />}
+        {tab === 'history'  && <HistoryPage  key="history"  />}
+        {tab === 'messages' && <MessagesPage key="messages" />}
+        <Navbar activeTab={tab} onTabChange={setTab} unreadCount={unreadCount} />
         {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
       </div>
     </AppContext.Provider>

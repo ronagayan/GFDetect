@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react'
-import { Clock, ScanLine, ShieldCheck, ShieldX, ShieldAlert, ImageOff, Loader2 } from 'lucide-react'
+import {
+  Clock, ScanLine, ShieldCheck, ShieldX, ShieldAlert,
+  ImageOff, Loader2, Upload, Globe,
+} from 'lucide-react'
 import { useApp } from '../App'
-import { fetchUserScans, getUserScanStats } from '../lib/supabase'
-import ScanCard from '../components/ScanCard'
+import { fetchUserScans, getUserScanStats, postScanToFeed } from '../lib/supabase'
 
 const FILTERS = [
-  { id: 'all',       label: 'All' },
-  { id: 'safe',      label: 'Safe' },
-  { id: 'unsafe',    label: 'Unsafe' },
+  { id: 'all',       label: 'All'       },
+  { id: 'safe',      label: 'Safe'      },
+  { id: 'unsafe',    label: 'Unsafe'    },
   { id: 'uncertain', label: 'Uncertain' },
 ]
 
@@ -20,16 +22,16 @@ function StatCard({ value, label, color }) {
   )
 }
 
-function HistoryItemRow({ scan }) {
+function HistoryItemRow({ scan, onShareClick }) {
   const STATUS = {
-    safe:      { Icon: ShieldCheck, color: 'var(--safe)'     },
-    unsafe:    { Icon: ShieldX,     color: 'var(--unsafe)'   },
+    safe:      { Icon: ShieldCheck, color: 'var(--safe)'      },
+    unsafe:    { Icon: ShieldX,     color: 'var(--unsafe)'    },
     uncertain: { Icon: ShieldAlert, color: 'var(--uncertain)' },
   }
   const { Icon, color } = STATUS[scan.gluten_status] ?? STATUS.uncertain
 
   const date = new Date(scan.created_at).toLocaleDateString(undefined, {
-    month: 'short', day: 'numeric', year: 'numeric'
+    month: 'short', day: 'numeric', year: 'numeric',
   })
 
   return (
@@ -40,20 +42,49 @@ function HistoryItemRow({ scan }) {
           : <ImageOff size={18} />
         }
       </div>
+
       <div className="history-info">
         <div className="history-name">{scan.product_name}</div>
         {scan.brand && <div className="history-brand">{scan.brand}</div>}
         <div className="history-footer">
-          <span className={`badge badge-${scan.gluten_status}`} style={{ fontSize: '0.68rem', padding: '3px 8px' }}>
+          <span
+            className={`badge badge-${scan.gluten_status}`}
+            style={{ fontSize: '0.68rem', padding: '3px 8px' }}
+          >
             <Icon size={10} />
-            {scan.gluten_status === 'safe' ? 'Safe' : scan.gluten_status === 'unsafe' ? 'Unsafe' : 'Uncertain'}
+            {scan.gluten_status === 'safe'
+              ? 'Safe'
+              : scan.gluten_status === 'unsafe'
+                ? 'Unsafe'
+                : 'Uncertain'
+            }
           </span>
           <span className="history-certainty">{scan.certainty_percentage}% certain</span>
         </div>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+
+      {/* Right: status icon + date + share button */}
+      <div style={{
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'flex-end', gap: 4, flexShrink: 0,
+      }}>
         <Icon size={18} style={{ color }} />
         <span className="history-date">{date}</span>
+
+        {scan.is_public ? (
+          <span className="posted-badge" title="Posted to community">
+            <Globe size={12} style={{ color: 'var(--purple-l)' }} />
+          </span>
+        ) : (
+          <button
+            className="post-btn"
+            title="Post to Community"
+            onClick={e => { e.stopPropagation(); onShareClick(scan) }}
+            aria-label="Post to Community"
+          >
+            <Upload size={12} />
+          </button>
+        )}
       </div>
     </div>
   )
@@ -61,11 +92,18 @@ function HistoryItemRow({ scan }) {
 
 export default function HistoryPage() {
   const { user, showAuthModal, setTab } = useApp()
-  const [scans, setScans]   = useState([])
-  const [stats, setStats]   = useState({ total: 0, safe: 0, unsafe: 0, uncertain: 0 })
-  const [filter, setFilter] = useState('all')
+
+  const [scans, setScans]     = useState([])
+  const [stats, setStats]     = useState({ total: 0, safe: 0, unsafe: 0, uncertain: 0 })
+  const [filter, setFilter]   = useState('all')
   const [loading, setLoading] = useState(true)
-  const [error, setError]   = useState(null)
+  const [error, setError]     = useState(null)
+
+  // Share-to-community sheet
+  const [sharingScan, setSharingScan] = useState(null)
+  const [caption, setCaption]         = useState('')
+  const [posting, setPosting]         = useState(false)
+  const [postError, setPostError]     = useState(null)
 
   useEffect(() => {
     if (!user) { setLoading(false); return }
@@ -83,6 +121,36 @@ export default function HistoryPage() {
       .finally(() => setLoading(false))
   }, [user, filter])
 
+  const openShareSheet = (scan) => {
+    setCaption('')
+    setPostError(null)
+    setSharingScan(scan)
+  }
+
+  const handlePostConfirm = async () => {
+    if (!sharingScan || posting) return
+    setPosting(true)
+    setPostError(null)
+    try {
+      await postScanToFeed(sharingScan.id, caption)
+      setScans(prev =>
+        prev.map(s =>
+          s.id === sharingScan.id
+            ? { ...s, is_public: true, caption: caption.trim() || null }
+            : s
+        )
+      )
+      setSharingScan(null)
+      setCaption('')
+    } catch (err) {
+      console.error('post error', err)
+      setPostError('Failed to post. Please try again.')
+    } finally {
+      setPosting(false)
+    }
+  }
+
+  /* ── Not logged in ── */
   if (!user) {
     return (
       <div className="page">
@@ -97,7 +165,11 @@ export default function HistoryPage() {
             <div className="empty-icon"><Clock size={28} /></div>
             <h3>Sign in to see history</h3>
             <p>Your scan history is saved when you're signed in.</p>
-            <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={showAuthModal}>
+            <button
+              className="btn btn-primary"
+              style={{ marginTop: 8 }}
+              onClick={showAuthModal}
+            >
               Sign In / Sign Up
             </button>
           </div>
@@ -113,15 +185,17 @@ export default function HistoryPage() {
           <Clock size={18} style={{ color: 'var(--purple-l)' }} />
           <h1>History</h1>
         </div>
-        <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>{stats.total} scan{stats.total !== 1 ? 's' : ''}</span>
+        <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>
+          {stats.total} scan{stats.total !== 1 ? 's' : ''}
+        </span>
       </header>
 
       <div className="page-scroll">
         {/* Stats */}
         {stats.total > 0 && (
           <div className="stats-row">
-            <StatCard value={stats.safe}      label="Safe"      color="var(--safe)"     />
-            <StatCard value={stats.unsafe}    label="Unsafe"    color="var(--unsafe)"   />
+            <StatCard value={stats.safe}      label="Safe"      color="var(--safe)"      />
+            <StatCard value={stats.unsafe}    label="Unsafe"    color="var(--unsafe)"    />
             <StatCard value={stats.uncertain} label="Uncertain" color="var(--uncertain)" />
           </div>
         )}
@@ -141,7 +215,7 @@ export default function HistoryPage() {
 
         {/* Loading */}
         {loading && (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '40px', color: 'var(--text-dim)' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', padding: 40, color: 'var(--text-dim)' }}>
             <Loader2 size={24} style={{ animation: 'spin 0.8s linear infinite' }} />
           </div>
         )}
@@ -162,7 +236,11 @@ export default function HistoryPage() {
                 : `No ${filter} products scanned yet.`}
             </p>
             {filter === 'all' && (
-              <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={() => setTab('scan')}>
+              <button
+                className="btn btn-primary"
+                style={{ marginTop: 8 }}
+                onClick={() => setTab('scan')}
+              >
                 Scan a Product
               </button>
             )}
@@ -171,9 +249,60 @@ export default function HistoryPage() {
 
         {/* List */}
         {!loading && scans.map(scan => (
-          <HistoryItemRow key={scan.id} scan={scan} />
+          <HistoryItemRow
+            key={scan.id}
+            scan={scan}
+            onShareClick={openShareSheet}
+          />
         ))}
       </div>
+
+      {/* ── Post to Community sheet ── */}
+      {sharingScan && (
+        <div className="modal-overlay" onClick={() => !posting && setSharingScan(null)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+            <div className="modal-handle" />
+
+            <h2 className="modal-title">Post to Community</h2>
+            <p className="modal-sub">
+              Share <strong>{sharingScan.product_name}</strong> with the celiac community.
+            </p>
+
+            <div className="modal-form">
+              <input
+                className="input"
+                placeholder="Add a caption (optional)"
+                value={caption}
+                onChange={e => setCaption(e.target.value)}
+                maxLength={200}
+                onKeyDown={e => { if (e.key === 'Enter') handlePostConfirm() }}
+                autoFocus
+              />
+
+              {postError && <div className="modal-error">{postError}</div>}
+
+              <button
+                className="btn btn-primary btn-full"
+                onClick={handlePostConfirm}
+                disabled={posting}
+              >
+                {posting
+                  ? <><Loader2 size={16} style={{ animation: 'spin 0.8s linear infinite' }} />{' '}Posting…</>
+                  : <><Globe size={16} />{' '}Post to Community</>
+                }
+              </button>
+
+              <button
+                className="btn btn-secondary btn-full"
+                onClick={() => setSharingScan(null)}
+                disabled={posting}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

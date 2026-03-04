@@ -1,17 +1,19 @@
-import { Globe, ScanLine, Clock } from 'lucide-react'
+import { Globe, ScanLine, Clock, MessageCircle } from 'lucide-react'
 
 const TABS = [
-  { id: 'social',  label: 'Social',  Icon: Globe    },
-  { id: 'scan',    label: 'Scan',    Icon: ScanLine  },
-  { id: 'history', label: 'History', Icon: Clock    },
+  { id: 'social',   label: 'Social',   Icon: Globe          },
+  { id: 'scan',     label: 'Scan',     Icon: ScanLine       },
+  { id: 'messages', label: 'Messages', Icon: MessageCircle  },
+  { id: 'history',  label: 'History',  Icon: Clock          },
 ]
 
-export default function Navbar({ activeTab, onTabChange }) {
+export default function Navbar({ activeTab, onTabChange, unreadCount = 0 }) {
   return (
     <nav className="navbar">
       {TABS.map(({ id, label, Icon }) => {
-        const active = activeTab === id
-        const isScan = id === 'scan'
+        const active    = activeTab === id
+        const isScan    = id === 'scan'
+        const showBadge = id === 'messages' && unreadCount > 0
 
         return (
           <button
@@ -21,7 +23,6 @@ export default function Navbar({ activeTab, onTabChange }) {
             aria-label={label}
           >
             {isScan ? (
-              /* Scan tab: purple circle + label below — no more floating orphan */
               <>
                 <span className={`nav-btn-scan${active ? ' active' : ''}`}>
                   <Icon size={20} strokeWidth={2.2} />
@@ -29,9 +30,15 @@ export default function Navbar({ activeTab, onTabChange }) {
                 <span className="nav-btn-label">{label}</span>
               </>
             ) : (
-              /* Social / History tabs */
               <>
-                <Icon size={20} strokeWidth={active ? 2.4 : 1.8} />
+                <span style={{ position: 'relative', display: 'inline-flex' }}>
+                  <Icon size={20} strokeWidth={active ? 2.4 : 1.8} />
+                  {showBadge && (
+                    <span className="nav-badge">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
+                </span>
                 <span className="nav-btn-label">{label}</span>
               </>
             )}
