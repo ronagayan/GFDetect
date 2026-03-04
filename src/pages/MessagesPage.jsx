@@ -42,6 +42,8 @@ export default function MessagesPage() {
   const [searchQuery, setSearchQuery]     = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [searching, setSearching]         = useState(false)
+  const [startingConvId, setStartingConvId] = useState(null) // profile.id being processed
+  const [startConvError, setStartConvError] = useState(null)
 
   const messagesEndRef = useRef(null)
   const chatInputRef   = useRef(null)
@@ -162,6 +164,9 @@ export default function MessagesPage() {
   }
 
   const handleStartConversation = async (profile) => {
+    if (startingConvId) return // prevent double-tap
+    setStartingConvId(profile.id)
+    setStartConvError(null)
     try {
       const conv = await findOrCreateConversation(user.id, profile.id)
       const augmented = { ...conv, otherProfile: profile, unreadCount: 0 }
@@ -175,6 +180,13 @@ export default function MessagesPage() {
       setSelectedConv(augmented)
     } catch (err) {
       console.error('start conv error', err)
+      setStartConvError(
+        err?.message?.includes('relation') || err?.code === '42P01'
+          ? 'Database not set up yet — run supabase/schema_social.sql first.'
+          : 'Could not start conversation. Please try again.'
+      )
+    } finally {
+      setStartingConvId(null)
     }
   }
 
@@ -374,13 +386,20 @@ export default function MessagesPage() {
 
       {/* ── New Message modal ── */}
       {showNewMsg && (
-        <div className="modal-overlay" onClick={() => { setShowNewMsg(false); setSearchQuery('') }}>
+        <div
+          className="modal-overlay"
+          onClick={() => { if (!startingConvId) { setShowNewMsg(false); setSearchQuery(''); setStartConvError(null) } }}
+        >
           <div className="modal-sheet" onClick={e => e.stopPropagation()}>
             <div className="modal-handle" />
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)' }}>New Message</h2>
-              <button className="btn-icon" onClick={() => { setShowNewMsg(false); setSearchQuery('') }}>
+              <button
+                className="btn-icon"
+                onClick={() => { setShowNewMsg(false); setSearchQuery(''); setStartConvError(null) }}
+                disabled={!!startingConvId}
+              >
                 <X size={16} />
               </button>
             </div>
@@ -396,10 +415,18 @@ export default function MessagesPage() {
                 style={{ paddingLeft: 36 }}
                 placeholder="Search by username…"
                 value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
+                onChange={e => { setSearchQuery(e.target.value); setStartConvError(null) }}
                 autoFocus
+                disabled={!!startingConvId}
               />
             </div>
+
+            {/* Error feedback */}
+            {startConvError && (
+              <div className="modal-error" style={{ marginBottom: 12 }}>
+                {startConvError}
+              </div>
+            )}
 
             {searching && (
               <div style={{ display: 'flex', justifyContent: 'center', padding: 16 }}>
@@ -407,19 +434,35 @@ export default function MessagesPage() {
               </div>
             )}
 
-            {!searching && searchResults.map(profile => (
-              <div
-                key={profile.id}
-                className="conv-item"
-                style={{ padding: '10px 0', borderBottom: 'none' }}
-                onClick={() => handleStartConversation(profile)}
-              >
-                <div className="avatar-sm" style={{ width: 36, height: 36, flexShrink: 0 }}>
-                  {(profile.username ?? '?')[0].toUpperCase()}
+            {!searching && searchResults.map(profile => {
+              const isLoading = startingConvId === profile.id
+              return (
+                <div
+                  key={profile.id}
+                  className="conv-item"
+                  style={{
+                    padding: '10px 0',
+                    borderBottom: 'none',
+                    opacity: startingConvId && !isLoading ? 0.4 : 1,
+                    pointerEvents: startingConvId ? 'none' : 'auto',
+                  }}
+                  onClick={() => handleStartConversation(profile)}
+                >
+                  <div className="avatar-sm" style={{ width: 36, height: 36, flexShrink: 0 }}>
+                    {isLoading
+                      ? <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} />
+                      : (profile.username ?? '?')[0].toUpperCase()
+                    }
+                  </div>
+                  <span style={{ fontWeight: 500, color: 'var(--text)' }}>@{profile.username}</span>
+                  {isLoading && (
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginLeft: 'auto' }}>
+                      Opening…
+                    </span>
+                  )}
                 </div>
-                <span style={{ fontWeight: 500, color: 'var(--text)' }}>@{profile.username}</span>
-              </div>
-            ))}
+              )
+            })}
 
             {!searching && searchQuery.length >= 2 && searchResults.length === 0 && (
               <p style={{ color: 'var(--text-dim)', fontSize: '0.85rem', textAlign: 'center', padding: '16px 0' }}>
