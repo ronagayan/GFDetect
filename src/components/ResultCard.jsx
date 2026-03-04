@@ -1,7 +1,12 @@
-import { ShieldCheck, ShieldX, ShieldAlert, AlertTriangle, Share2, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
+import {
+  ShieldCheck, ShieldX, ShieldAlert, AlertTriangle,
+  Share2, RefreshCw, ChevronDown, ChevronUp,
+  Database, BookOpen, Eye, Layers, ExternalLink,
+} from 'lucide-react'
 import { useState } from 'react'
 import CertaintyRing from './CertaintyRing'
 
+// ── Status metadata ───────────────────────────────────────────────────────────
 const STATUS_META = {
   safe: {
     Icon: ShieldCheck,
@@ -23,6 +28,64 @@ const STATUS_META = {
   },
 }
 
+// ── Data source badge ─────────────────────────────────────────────────────────
+const SOURCE_META = {
+  database_barcode:  { Icon: Database,  label: 'Barcode Verified',  color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   title: 'Exact barcode match found in Open Food Facts database' },
+  database_name:     { Icon: Database,  label: 'Database Match',    color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   title: 'Product found by name search in Open Food Facts database' },
+  training_knowledge:{ Icon: BookOpen,  label: 'AI Knowledge',      color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)',  title: 'Based on GPT-4o training knowledge of this product' },
+  label_scan:        { Icon: Eye,       label: 'Label Scan',        color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  title: 'Based on reading the ingredient label in the photo' },
+  combined:          { Icon: Layers,    label: 'Label + Database',  color: '#f59e0b', bg: 'rgba(245,158,11,0.12)',  title: 'Combined image reading with database verification' },
+}
+
+function DataSourceBadge({ dataSource, matchType, offUrl }) {
+  const key =
+    matchType === 'barcode' ? 'database_barcode' :
+    matchType === 'name'    ? 'database_name'    :
+    SOURCE_META[dataSource] ? dataSource         : 'label_scan'
+
+  const meta = SOURCE_META[key]
+  const { Icon } = meta
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <div
+        title={meta.title}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 5,
+          padding: '4px 10px', borderRadius: 'var(--r-full)',
+          fontSize: '0.72rem', fontWeight: 600,
+          background: meta.bg, color: meta.color,
+          border: `1px solid ${meta.color}33`,
+          cursor: 'default',
+        }}
+      >
+        <Icon size={11} />
+        {meta.label}
+      </div>
+
+      {offUrl && (
+        <a
+          href={offUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="View full product details on Open Food Facts"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            fontSize: '0.72rem', color: 'var(--text-dim)',
+            textDecoration: 'none', transition: 'color 0.15s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.color = 'var(--text-base)'}
+          onMouseLeave={e => e.currentTarget.style.color = 'var(--text-dim)'}
+        >
+          <ExternalLink size={10} />
+          Open Food Facts
+        </a>
+      )}
+    </div>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 export default function ResultCard({ result, imageSrc, onReset, onShare, scanId }) {
   const [showIngredients, setShowIngredients] = useState(false)
   const [shared, setShared] = useState(false)
@@ -39,8 +102,12 @@ export default function ResultCard({ result, imageSrc, onReset, onShare, scanId 
 
   const dangerSet = new Set((result.gluten_sources ?? []).map(s => s.toLowerCase()))
 
+  // Source info (may be absent in old scan records — graceful fallback)
+  const hasSourceInfo = result.data_source || result.database_match_type || result.off_url
+
   return (
     <div className="result-wrap">
+
       {/* Hero image */}
       {imageSrc && (
         <div className="result-hero">
@@ -49,6 +116,35 @@ export default function ResultCard({ result, imageSrc, onReset, onShare, scanId 
             <div className="result-product-name">{result.product_name}</div>
             {result.brand && <div className="result-brand">{result.brand}</div>}
           </div>
+        </div>
+      )}
+
+      {/* Data source badge — shown below the hero */}
+      {hasSourceInfo && (
+        <div style={{ paddingInline: 2 }}>
+          <DataSourceBadge
+            dataSource={result.data_source}
+            matchType={result.database_match_type}
+            offUrl={result.off_url}
+          />
+        </div>
+      )}
+
+      {/* Database verified banner — highlighted when we found a database record */}
+      {result.database_match && (
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', gap: 10,
+          padding: '10px 14px', borderRadius: 'var(--r-md)',
+          background: 'rgba(34,197,94,0.07)',
+          border: '1px solid rgba(34,197,94,0.18)',
+          fontSize: '0.8rem', color: 'var(--safe)',
+          lineHeight: 1.5,
+        }}>
+          <Database size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+          <span>
+            <strong>Database verified</strong> — Ingredient and allergen data retrieved from
+            Open Food Facts and cross-referenced with the product image.
+          </span>
         </div>
       )}
 
@@ -111,7 +207,8 @@ export default function ResultCard({ result, imageSrc, onReset, onShare, scanId 
           {showIngredients && (
             <div className="ingredient-list" style={{ animation: 'fadeUp 0.2s ease' }}>
               {result.ingredients.map((ing, i) => {
-                const isDanger = dangerSet.has(ing.toLowerCase()) ||
+                const isDanger =
+                  dangerSet.has(ing.toLowerCase()) ||
                   [...dangerSet].some(d => ing.toLowerCase().includes(d))
                 return (
                   <span key={i} className={`ingredient-tag${isDanger ? ' danger' : ''}`}>
@@ -128,7 +225,17 @@ export default function ResultCard({ result, imageSrc, onReset, onShare, scanId 
       {result.certifications?.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {result.certifications.map((cert, i) => (
-            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 'var(--r-full)', fontSize: '0.75rem', fontWeight: 600, background: 'var(--safe-dim)', border: '1px solid rgba(34,197,94,0.2)', color: 'var(--safe)' }}>
+            <span
+              key={i}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                padding: '4px 10px', borderRadius: 'var(--r-full)',
+                fontSize: '0.75rem', fontWeight: 600,
+                background: 'var(--safe-dim)',
+                border: '1px solid rgba(34,197,94,0.2)',
+                color: 'var(--safe)',
+              }}
+            >
               ✓ {cert}
             </span>
           ))}
@@ -138,15 +245,17 @@ export default function ResultCard({ result, imageSrc, onReset, onShare, scanId 
       {/* Analysis notes */}
       {result.analysis_notes && (
         <div className="notes-box">
-          {result.identified_from_training
-            ? '🧠 '
-            : '💬 '}
+          {result.database_match
+            ? '🌐 '
+            : result.identified_from_training
+              ? '🧠 '
+              : '💬 '}
           {result.analysis_notes}
         </div>
       )}
 
       {/* Ingredient visibility warning */}
-      {!result.ingredients_visible && (
+      {!result.ingredients_visible && !result.database_match && (
         <div className="cross-cont-banner" style={{ background: 'var(--purple-dim)', borderColor: 'rgba(139,92,246,0.2)', color: 'var(--purple-l)' }}>
           <AlertTriangle size={16} style={{ flexShrink: 0 }} />
           <span>Ingredient list not fully readable. Result based on product recognition only.</span>

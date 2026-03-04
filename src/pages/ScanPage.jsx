@@ -6,6 +6,7 @@ import { saveScan, makeScanPublic } from '../lib/supabase'
 import ResultCard from '../components/ResultCard'
 import LoadingSteps from '../components/LoadingSteps'
 
+// Must match the number of STEPS in LoadingSteps.jsx
 const STEP_COUNT = 5
 
 export default function ScanPage() {
@@ -18,7 +19,6 @@ export default function ScanPage() {
   const [error, setError] = useState(null)
   const fileRef = useRef(null)
   const cameraRef = useRef(null)
-  const stepTimer = useRef(null)
 
   const handleFile = useCallback(async file => {
     if (!file?.type.startsWith('image/')) return
@@ -45,17 +45,11 @@ export default function ScanPage() {
     setError(null)
     setStep(0)
 
-    // Advance steps on a timer to show progress
-    let s = 0
-    stepTimer.current = setInterval(() => {
-      s = Math.min(s + 1, STEP_COUNT - 1)
-      setStep(s)
-    }, 900)
-
     try {
-      const analysis = await analyzeProductForGluten(image.base64)
-      clearInterval(stepTimer.current)
-      setStep(STEP_COUNT)
+      // Pass setStep directly — analyze.js calls it at real phase transitions:
+      // 0 → identifying, 1 → searching DB, 2 → DB done, 3 → analyzing, 4 → normalizing
+      const analysis = await analyzeProductForGluten(image.base64, setStep)
+      setStep(STEP_COUNT)  // mark all steps complete
       setResult(analysis)
 
       // Save to Supabase if user is signed in
@@ -68,7 +62,6 @@ export default function ScanPage() {
         }
       }
     } catch (err) {
-      clearInterval(stepTimer.current)
       setError(err.message || 'Analysis failed. Check your OpenAI API key and try again.')
     } finally {
       setAnalyzing(false)
@@ -82,7 +75,6 @@ export default function ScanPage() {
   }
 
   const reset = () => {
-    clearInterval(stepTimer.current)
     setImage(null)
     setResult(null)
     setError(null)

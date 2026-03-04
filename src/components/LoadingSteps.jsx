@@ -2,10 +2,10 @@ import { CheckCircle2, Loader2, Circle } from 'lucide-react'
 
 const STEPS = [
   'Identifying product...',
-  'Reading ingredients...',
-  'Checking gluten sources...',
-  'Verifying cross-contamination...',
-  'Calculating certainty...',
+  'Searching product database...',
+  'Processing ingredient data...',
+  'Analyzing for gluten...',
+  'Calculating safety rating...',
 ]
 
 export default function LoadingSteps({ currentStep, imageSrc }) {
