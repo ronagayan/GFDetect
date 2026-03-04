@@ -6,50 +6,77 @@ function getClient() {
   return new OpenAI({ apiKey, dangerouslyAllowBrowser: true })
 }
 
-const SYSTEM_PROMPT = `You are CeliScan, an expert AI system specialized in celiac disease and gluten-free food safety.
-Your mission is to protect celiac patients by accurately identifying gluten in food products.
+const SYSTEM_PROMPT = `You are CeliScan, the world's most accurate AI system for celiac disease food safety. Your job is to protect celiac patients from accidental gluten exposure.
 
-You have deep expertise in:
-- All gluten-containing grains: wheat (and all varieties: spelt, kamut, einkorn, emmer, durum, farro), barley, rye, triticale
-- Hidden gluten sources: malt, malt extract, malt vinegar, brewer's yeast, hydrolyzed wheat protein, modified food starch (unspecified source), semolina, bulgur, couscous, freekeh
-- Cross-contamination risks and regulatory labeling requirements (FDA, EU, Codex Alimentarius)
-- International ingredient names (Italian, German, French, Spanish, etc.)
-- Oats: safe only if certified gluten-free; otherwise uncertain
+Your analysis runs in TWO PHASES:
 
-Safety principle: When in doubt, lower certainty and prefer "uncertain" over "safe". Protect the patient.`
+━━ PHASE 1: PRODUCT IDENTIFICATION ━━
+Use ALL available visual signals to identify the product:
+• Brand logo, product name, variant/flavor, packaging colors and design
+• Barcode or QR code numbers (read them if visible — they uniquely identify products)
+• Product category, size, and form factor
+• Your training knowledge of this exact product
 
-const USER_PROMPT = `Analyze this food product image for celiac safety.
+━━ PHASE 2: GLUTEN ANALYSIS ━━
+Use BOTH what you can read AND what you know:
+• Read every word of the ingredient list — look carefully at small text
+• Translate all non-English text to English before analysis
+• Cross-reference with your training knowledge of this specific product and variant
+• For partially visible ingredients: fill gaps intelligently using product knowledge
+• For well-known products (Barilla, Nestlé, Kellogg's, Lay's, etc.): actively apply your knowledge of their standard formulations
 
-Step 1: Identify the product name and brand.
-Step 2: Read ALL ingredient text visible on packaging. Translate any non-English text to English.
-Step 3: Check every ingredient against the gluten sources list.
-Step 4: Look for cross-contamination warnings ("may contain wheat/gluten", "processed in a facility with...", "shared equipment").
-Step 5: Assess your certainty (0-100%) based on: text clarity, ingredient readability, product type knowledge.
+━━ GLUTEN SOURCES TO CHECK ━━
+DEFINITE: wheat, whole wheat, wheat flour, enriched flour, wheat starch, wheat germ, wheat bran, wheat berries, durum, semolina, spelt, kamut, einkorn, emmer, farro, triticale, barley, barley malt, malt extract, malt syrup, malt vinegar, malt flavoring, rye, seitan, fu, bulgur, couscous, freekeh, hydrolyzed wheat protein, brewer's yeast
+UNCERTAIN: oats / oat flour / oat bran (safe ONLY if labeled "certified gluten-free"), modified food starch (safe only if source stated as corn, potato, or tapioca)
 
-Gluten sources checklist:
-wheat, flour, whole wheat, wheat starch, wheat germ, wheat bran, wheat berries, enriched flour, durum, semolina, farro, spelt, kamut, einkorn, emmer, triticale,
-barley, barley malt, malt extract, malt syrup, malt vinegar, malt flavoring,
-rye, oats (unless "certified gluten-free"), brewer's yeast,
-hydrolyzed wheat protein, modified food starch (when source not specified as corn/potato/tapioca),
-bulgur, couscous, freekeh, seitan, fu
+━━ CERTAINTY SCORING ━━
+95–100% → Ingredient list clearly readable AND product confirmed from training data
+80–94%  → Ingredient list clearly readable OR strong product identification from training
+60–79%  → Partial ingredient visibility + good product recognition
+40–59%  → Limited visibility, mostly relying on product knowledge
+0–39%   → Poor image quality or unrecognizable product
 
-Respond with ONLY valid JSON (absolutely no markdown, no text outside the JSON object):
+━━ SAFETY RULE ━━
+Never guess "safe" when uncertain. Default to "uncertain". Protect the patient.`
+
+const USER_PROMPT = `Analyze this food product image for celiac/gluten-free safety.
+
+Follow these steps:
+
+STEP 1 — Full visual scan
+Look at the entire image. Identify: brand, product name, variant/flavor, packaging, any barcodes or QR codes, country of origin, certifications (gluten-free logo, etc.).
+
+STEP 2 — Apply training knowledge
+Do you recognize this product? If yes, what do you know about its ingredients from your training data? Note whether this is a standard variant or a special edition that might differ.
+
+STEP 3 — Read all ingredient text
+Zoom into the ingredient panel mentally. Read every word, including small print. Translate any non-English text. Note if ingredients are partially cut off or blurry.
+
+STEP 4 — Check for warnings
+Look for: "contains wheat/gluten", "may contain wheat/gluten", "produced in a facility with wheat", "shared equipment", allergen declarations.
+
+STEP 5 — Make determination
+Combine your image reading + training knowledge. Be specific about which source led to your conclusion.
+
+Respond with ONLY valid JSON — no markdown, no text outside the JSON:
 {
-  "product_name": "full product name or 'Unknown Product'",
+  "product_name": "full product name and variant (e.g. 'Barilla Penne Rigate No.72')",
   "brand": "brand name or null",
   "gluten_status": "safe" or "unsafe" or "uncertain",
   "certainty_percentage": integer 0-100,
-  "ingredients": ["full ingredient list extracted from image"],
-  "gluten_sources": ["specific gluten ingredients found"],
+  "ingredients": ["complete ingredient list, translated to English"],
+  "gluten_sources": ["exact gluten ingredients found, e.g. 'wheat semolina'"],
   "cross_contamination": true or false,
   "cross_contamination_note": "exact warning text or null",
-  "analysis_notes": "1-2 sentence explanation of your determination",
-  "ingredients_visible": true or false
+  "analysis_notes": "2-3 sentences: what you read from the label + what you knew from training + why you chose this status",
+  "ingredients_visible": true or false,
+  "identified_from_training": true or false,
+  "certifications": ["any GF certifications seen, e.g. 'Crossed Grain Symbol'"]
 }`
 
 /**
- * Compress image to max 1024px and convert to base64.
- * Returns { base64, preview } where preview is a data URL for display.
+ * Compress image while preserving enough resolution to read ingredient labels.
+ * Uses a higher max size (1920px) and quality (0.92) than before.
  */
 export function compressImage(file) {
   return new Promise((resolve, reject) => {
@@ -59,7 +86,8 @@ export function compressImage(file) {
       const img = new Image()
       img.onerror = reject
       img.onload = () => {
-        const MAX = 1024
+        // Use 1920px max to preserve label text legibility
+        const MAX = 1920
         let { width, height } = img
         if (width > MAX || height > MAX) {
           if (width >= height) { height = Math.round((height / width) * MAX); width = MAX }
@@ -69,7 +97,8 @@ export function compressImage(file) {
         canvas.width = width
         canvas.height = height
         canvas.getContext('2d').drawImage(img, 0, 0, width, height)
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+        // Higher quality (0.92) to preserve small text on labels
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.92)
         resolve({ base64: dataUrl.split(',')[1], preview: e.target.result })
       }
       img.src = e.target.result
@@ -104,7 +133,7 @@ export async function analyzeProductForGluten(base64) {
         ],
       },
     ],
-    max_tokens: 900,
+    max_tokens: 1500,
     response_format: { type: 'json_object' },
   })
 
@@ -115,7 +144,6 @@ export async function analyzeProductForGluten(base64) {
     throw new Error('OpenAI returned invalid JSON. Please try again.')
   }
 
-  // Normalize & validate
   const status = ['safe', 'unsafe', 'uncertain'].includes(raw.gluten_status)
     ? raw.gluten_status
     : 'uncertain'
@@ -131,5 +159,7 @@ export async function analyzeProductForGluten(base64) {
     cross_contamination_note: raw.cross_contamination_note || null,
     analysis_notes: raw.analysis_notes || '',
     ingredients_visible: raw.ingredients_visible !== false,
+    identified_from_training: Boolean(raw.identified_from_training),
+    certifications: Array.isArray(raw.certifications) ? raw.certifications : [],
   }
 }

@@ -124,10 +124,24 @@ export default function ResultCard({ result, imageSrc, onReset, onShare, scanId 
         </div>
       )}
 
+      {/* Certifications */}
+      {result.certifications?.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {result.certifications.map((cert, i) => (
+            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 'var(--r-full)', fontSize: '0.75rem', fontWeight: 600, background: 'var(--safe-dim)', border: '1px solid rgba(34,197,94,0.2)', color: 'var(--safe)' }}>
+              ✓ {cert}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Analysis notes */}
       {result.analysis_notes && (
         <div className="notes-box">
-          💬 {result.analysis_notes}
+          {result.identified_from_training
+            ? '🧠 '
+            : '💬 '}
+          {result.analysis_notes}
         </div>
       )}
 
