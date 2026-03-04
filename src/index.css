@@ -32,10 +32,11 @@
   --text-dim:  #475569;
 
   /* Layout */
-  --nav-h:   68px;
+  --nav-h:   64px;
   --hdr-h:   58px;
   --r:        16px;
   --r-sm:     10px;
+  --r-md:     12px;
   --r-lg:     24px;
   --r-full:   999px;
 }
@@ -100,7 +101,7 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding-bottom: var(--nav-h);
+  padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
   min-height: 100vh;
   animation: fadeUp 0.3s ease;
 }
@@ -158,56 +159,74 @@ body {
   transform: translateX(-50%);
   width: 100%;
   max-width: 430px;
-  height: var(--nav-h);
-  background: rgba(15,15,30,0.92);
+  height: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
+  background: rgba(10, 10, 22, 0.96);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border-top: 1px solid var(--border);
   display: flex;
-  align-items: center;
+  align-items: flex-start;    /* align from top so padding-top controls spacing */
   justify-content: space-around;
   z-index: 100;
+  padding-top: 8px;
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 .nav-btn {
   flex: 1;
-  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
+  gap: 3px;
   cursor: pointer;
   background: none;
   border: none;
   color: var(--text-dim);
-  font-size: 0.7rem;
-  font-weight: 500;
   transition: color 0.2s;
   position: relative;
+  padding: 0;
 }
 .nav-btn.active { color: var(--purple-l); }
-.nav-btn.active::before {
+
+/* Active indicator — thin top bar on Social / History */
+.nav-btn:not(.scan-tab).active::before {
   content: '';
   position: absolute;
-  top: 8px;
+  top: -8px;
   left: 50%;
   transform: translateX(-50%);
   width: 24px;
-  height: 3px;
+  height: 2px;
   background: var(--purple);
-  border-radius: 0 0 3px 3px;
+  border-radius: 0 0 2px 2px;
 }
+
+/* Scan circle — properly sized to leave room for label */
 .nav-btn-scan {
-  background: var(--purple);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
   border-radius: 50%;
-  width: 48px !important;
-  height: 48px !important;
-  color: white !important;
-  box-shadow: 0 0 20px var(--purple-glow);
-  margin-bottom: 4px;
+  width: 42px;
+  height: 42px;
+  color: white;
+  box-shadow: 0 0 18px var(--purple-glow), 0 4px 12px rgba(0,0,0,0.35);
+  transition: box-shadow 0.2s, transform 0.15s;
+  flex-shrink: 0;
 }
-.nav-btn-scan.active { box-shadow: 0 0 30px var(--purple-glow); }
+.nav-btn-scan.active {
+  box-shadow: 0 0 28px var(--purple-glow), 0 4px 16px rgba(0,0,0,0.4);
+  transform: scale(1.06);
+}
+.nav-btn:active .nav-btn-scan { transform: scale(0.94); }
+
+/* Label under all tabs — consistent sizing */
+.nav-btn-label {
+  font-size: 0.65rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
 
 /* ─── Buttons ─────────────────────────────────── */
 .btn {
